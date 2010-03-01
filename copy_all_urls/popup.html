@@ -1,0 +1,28 @@
+<html>
+<head>
+<script><!--
+
+    function copyAllUrls() {
+        chrome.windows.getCurrent(function(win) {
+            chrome.tabs.getAllInWindow(win.id, function(tabs) {
+                result = "";
+                for (i = 0; i < tabs.length; i++) {
+                    result += tabs[i].title + " <" + tabs[i].url + '>\n';
+                }
+                target = document.getElementById('target');
+                target.value = result;
+                target.select();
+                document.execCommand("copy", false, null);
+            });
+        });
+    }
+
+    copyAllUrls();
+
+//--></script>
+</head>
+<body>
+<textarea id="target">
+</textarea>
+</body>
+</html>
