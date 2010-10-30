@@ -4,6 +4,7 @@
 
     function copyAllUrls() {
         var format = localStorage["copy_all_urls_format"];
+        if (!format) { format = "%text% %url%"; }
         chrome.windows.getCurrent(function(win) {
             chrome.tabs.getAllInWindow(win.id, function(tabs) {
                 var result = "";
