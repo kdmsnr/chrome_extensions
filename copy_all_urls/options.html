@@ -12,8 +12,9 @@ function save_options() {
 }
 
 function restore_options() {
-  document.getElementById("copy_all_urls_format").value =
-    localStorage["copy_all_urls_format"];
+  var format = localStorage["copy_all_urls_format"];
+  if (!format) { format = "%text% %url%"; }
+  document.getElementById("copy_all_urls_format").value = format;
 }
 //--></script>
 
@@ -24,7 +25,7 @@ function restore_options() {
   <li><code>%url%</code> means URL.</li>
 </ul>
 <div id="status" style="color:red; display:none;">Options Saved.</div>
-<input type="text" id="copy_all_urls_format" value="%url% - %text%" />
+<input type="text" id="copy_all_urls_format" />
 <button onclick="save_options()">Save</button>
 </body>
 </html>
