@@ -1,0 +1,30 @@
+<html>
+<head>
+	<title>Copy All URLs Options</title>
+</head>
+
+<script type="text/javascript"><!--
+function save_options() {
+  localStorage["copy_all_urls_format"] =
+    document.getElementById("copy_all_urls_format").value;
+
+  document.getElementById("status").style.display = 'block';
+}
+
+function restore_options() {
+  document.getElementById("copy_all_urls_format").value =
+    localStorage["copy_all_urls_format"];
+}
+//--></script>
+
+<body onload="restore_options()">
+<h1>Format for Title and URL</h1>
+<ul>
+  <li><code>%text%</code> means Title.</li>
+  <li><code>%url%</code> means URL.</li>
+</ul>
+<div id="status" style="color:red; display:none;">Options Saved.</div>
+<input type="text" id="copy_all_urls_format" value="%url% - %text%" />
+<button onclick="save_options()">Save</button>
+</body>
+</html>

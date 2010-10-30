@@ -1,15 +1,18 @@
 <html>
 <head>
-<script><!--
+<script type="text/javascript"><!--
 
     function copyAllUrls() {
+        var format = localStorage["copy_all_urls_format"];
         chrome.windows.getCurrent(function(win) {
             chrome.tabs.getAllInWindow(win.id, function(tabs) {
-                result = "";
+                var result = "";
                 for (i = 0; i < tabs.length; i++) {
-                    result += tabs[i].title + " <" + tabs[i].url + '>\n';
+                    result += format.replace(/%text%/g, tabs[i].title).
+                              replace(/%url%/g, tabs[i].url);
+                    result += '\n';
                 }
-                target = document.getElementById('target');
+                var target = document.getElementById('target');
                 target.value = result;
                 target.select();
                 document.execCommand("copy", false, null);
