@@ -10,7 +10,8 @@
                 var result = "";
                 for (i = 0; i < tabs.length; i++) {
                     result += format.replace(/%text%/g, tabs[i].title).
-                              replace(/%url%/g, tabs[i].url);
+                              replace(/%url%/g, tabs[i].url).
+                              replace(/\\n/g, "\n");
                     result += '\n';
                 }
                 var target = document.getElementById('target');
