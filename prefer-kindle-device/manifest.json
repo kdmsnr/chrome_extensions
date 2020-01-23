@@ -1,0 +1,18 @@
+{
+    "name": "Prefer Kindle Device",
+    "version": "1.0",
+    "description": "",
+    "permissions": ["storage"],
+    "manifest_version": 2,
+    "content_scripts": [{
+        "matches": ["https://www.amazon.co.jp/*"],
+        "js": [
+            "content.js"
+        ],
+        "run_at": "document_end",
+        "all_frames": true
+    }],
+    "permissions": [
+        "https://www.amazon.co.jp/*"
+    ]
+}
