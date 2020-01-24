@@ -6,13 +6,17 @@ function main(e) {
     var t = document.querySelector(".ebookBuyboxDeliverToDropdown").children[1];
     if (t != null) {
       clearInterval(jsInitCheckTimer);
-      var c = t.parentNode.children;
-      for (var i = 0; i < c.length; i++) {
-        if (c[i].label == "_iPad") {
-          c[i].selected = true;
-          document.querySelector(".a-dropdown-prompt").innerText = '_iPad';
+
+      chrome.storage.sync.get(['device'], function(result) {
+        name = result.device;
+        var c = t.parentNode.children;
+        for (var i = 0; i < c.length; i++) {
+          if (c[i].label == name) {
+            c[i].selected = true;
+            document.querySelector(".a-dropdown-prompt").innerText = name;
+          }
         }
-      }
+      });
     }
   }
 }

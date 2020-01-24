@@ -2,10 +2,13 @@
     "name": "Prefer Kindle Device",
     "version": "1.0",
     "description": "",
-    "permissions": ["storage"],
     "manifest_version": 2,
     "content_scripts": [{
-        "matches": ["https://www.amazon.co.jp/*"],
+        "matches": [
+            "https://www.amazon.co.jp/*",
+            "https://www.amazon.com/*",
+            "https://www.amazon.co.uk/*"
+        ],
         "js": [
             "content.js"
         ],
@@ -13,6 +16,16 @@
         "all_frames": true
     }],
     "permissions": [
-        "https://www.amazon.co.jp/*"
-    ]
+        "storage",
+        "https://www.amazon.co.jp/*",
+        "https://www.amazon.com/*",
+        "https://www.amazon.co.uk/*"
+    ],
+    "options_ui": {
+        "page": "options.html",
+        "chrome_style": true
+    },
+    "browser_action": {
+        "default_popup": "options.html"
+    }
 }
