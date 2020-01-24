@@ -8,7 +8,7 @@ function main(e) {
       clearInterval(jsInitCheckTimer);
 
       chrome.storage.sync.get(['device'], function(result) {
-        name = result.device;
+        var name = result.device;
         var c = t.parentNode.children;
         for (var i = 0; i < c.length; i++) {
           if (c[i].label == name) {
