@@ -1,52 +1,27 @@
 <html>
-<head>
-	<title>Copy All URLs Options</title>
-</head>
+  <head>
+    <title>Copy All URLs Options</title>
+  </head>
 
-<script type="text/javascript"><!--
-function save_options() {
-  localStorage["copy_all_urls_format"] =
-    document.getElementById("copy_all_urls_format").value;
+  <body>
+    <h1>Format for Title and URL</h1>
+    <ul>
+      <li><code>%text%</code> means Title.</li>
+      <li><code>%url%</code> means URL.</li>
+      <li><code>\n</code> means new line.</li>
+    </ul>
+    <div id="status" style="color:red; display:none;">Options Saved.</div>
+    <input type="text" id="copy_all_urls_format" size="100" />
+    <button id="save">Save</button>
 
-  document.getElementById("status").style.display = 'block';
-}
-
-function restore_options() {
-  var format = localStorage["copy_all_urls_format"];
-  if (!format) { format = "%text% %url%"; }
-  document.getElementById("copy_all_urls_format").value = format;
-}
-
-function easy_format(format) {
-  if (format == "a_link") {
-    format = '<a href="%url%">%text%</a>';
-  } else if (format == "new_line") {
-    format = '%text%\\n%url%';
-  } else {
-    format = '%text% %url%';
-  }
-
-  document.getElementById("copy_all_urls_format").value = format;
-  save_options();
-}
-//--></script>
-
-<body onload="restore_options()">
-<h1>Format for Title and URL</h1>
-<ul>
-  <li><code>%text%</code> means Title.</li>
-  <li><code>%url%</code> means URL.</li>
-  <li><code>\n</code> means new line.</li>
-</ul>
-<div id="status" style="color:red; display:none;">Options Saved.</div>
-<input type="text" id="copy_all_urls_format" size="100" />
-<button onclick="save_options()">Save</button>
-
-<h2>Easy Setting</h2>
-<ul>
-	<li><a href="javascript:easy_format('simple');">Simple format</a></li>
-	<li><a href="javascript:easy_format('new_line');">Title \n URL</a></li>
-	<li><a href="javascript:easy_format('a_link');">HTML a link format</a></li>
-</ul>
-</body>
+    <h2>Easy Setting</h2>
+    <ul>
+      <li><a href="#" class="es" name="simple">Simple format</a></li>
+      <li><a href="#" class="es" name="new_line">Title \n URL</a></li>
+      <li><a href="#" class="es" name="a_link">HTML a link format</a></li>
+      <li><a href="#" class="es" name="excel">Excel Format</a></li>
+      <li><a href="#" class="es" name="markdown">Markdown</a></li>
+    </ul>
+    <script src="options.js"></script>
+  </body>
 </html>
