@@ -1,14 +1,23 @@
 function save_options() {
-  localStorage["copy_all_urls_format"] =
-    document.getElementById("copy_all_urls_format").value;
-
-  document.getElementById("status").style.display = 'block';
+  var f = document.getElementById('copy_all_urls_format').value;
+  chrome.storage.sync.set({
+    format: f
+  }, function() {
+    // Update status to let user know options were saved.
+    var status = document.getElementById('status');
+    status.textContent = 'Options saved.';
+    setTimeout(function() {
+      status.textContent = '';
+    }, 750);
+  });
 }
 
 function restore_options() {
-  var format = localStorage["copy_all_urls_format"];
-  if (!format) { format = "%text% %url%"; }
-  document.getElementById("copy_all_urls_format").value = format;
+  chrome.storage.sync.get(['format'], function(items) {
+    var format = items.format;
+    if (!format) { format = "%text% %url%"; }
+    document.getElementById("copy_all_urls_format").value = format;
+  });
 }
 
 function easy_format() {
@@ -18,7 +27,7 @@ function easy_format() {
   } else if (format == "new_line") {
     format = '%text%\\n%url%';
   } else if (format == "excel") {
-    format = '%text%\t%url%';
+    format = '%text%\\t%url%';
   } else if (format == "markdown") {
     format = '[%text%](%url%)';
   } else {

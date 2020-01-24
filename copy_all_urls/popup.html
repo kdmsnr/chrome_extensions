@@ -1,33 +1,9 @@
 <html>
-<head>
-<script type="text/javascript"><!--
-
-    function copyAllUrls() {
-        var format = localStorage["copy_all_urls_format"];
-        if (!format) { format = "%text% %url%"; }
-        chrome.windows.getCurrent(function(win) {
-            chrome.tabs.getAllInWindow(win.id, function(tabs) {
-                var result = "";
-                for (i = 0; i < tabs.length; i++) {
-                    result += format.replace(/%text%/g, tabs[i].title).
-                              replace(/%url%/g, tabs[i].url).
-                              replace(/\\n/g, "\n");
-                    result += '\n';
-                }
-                var target = document.getElementById('target');
-                target.value = result;
-                target.select();
-                document.execCommand("copy", false, null);
-            });
-        });
-    }
-
-    copyAllUrls();
-
-//--></script>
-</head>
-<body>
-<textarea id="target">
-</textarea>
-</body>
+  <head>
+  </head>
+  <body>
+    <textarea id="target" cols="80" rows="40">
+    </textarea>
+    <script src="popup.js"></script>
+  </body>
 </html>

@@ -4,11 +4,11 @@
     "version": "0.2.8",
     "browser_action": {
         "default_icon": "icon.png",
-        "popup": "popup.html"
+        "default_popup": "popup.html"
     },
     "options_page": "options.html",
     "permissions": [
-	"storage",
+        "storage",
         "tabs"
     ]
 }
