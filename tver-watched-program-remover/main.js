@@ -5,8 +5,8 @@ let featureEnabled = true; // 初期状態はオン
 function toggleWatchedPrograms() {
   const elements = document.querySelectorAll("[class^='mypage-content-item_container']");
   elements.forEach(element => {
-    const progressBar = element.querySelector("[class^='progress-bar_progressIcon']");
-    if (progressBar && progressBar.style.left === '100%') {
+    const progressBar = element.querySelector("[class^='ProgressBar_progress']");
+    if (progressBar && progressBar.style.width === '100%') {
       element.style.display = featureEnabled ? 'none' : ''; // Onなら非表示、Offなら表示
     }
   });
