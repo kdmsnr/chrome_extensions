@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <title>Tab Sorter</title>
+    <meta name="viewport" content="width=400">
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 10px;
+        min-width: 400px;
+      }
+      .option {
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Sort Tabs By</h2>
+    <div class="option">
+      <input type="radio" id="title" name="sortCriteria" value="title" checked>
+      <label for="title">Title</label>
+    </div>
+    <div class="option">
+      <input type="radio" id="url" name="sortCriteria" value="url">
+      <label for="url">URL</label>
+    </div>
+    <div class="option">
+      <input type="radio" id="lastAccessed" name="sortCriteria"
+value="lastAccessed">
+      <label for="lastAccessed">Last Accessed</label>
+    </div>
+    <button id="sortButton">Sort</button>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
