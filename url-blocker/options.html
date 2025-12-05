@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>URL Blocker Options</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    textarea { width: 100%; height: 200px; }
+    button { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>URL Blocker Settings</h1>
+  <label for="regexList">Enter blocked URL patterns (Regular Expressions, one per line):</label><br>
+  <textarea id="regexList" placeholder="e.g., .*twitter\\.com.*"></textarea><br>
+  <button id="saveButton">Save Settings</button>
+  <script src="options.js"></script>
+</body>
+</html>
