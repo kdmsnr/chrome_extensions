@@ -20,7 +20,10 @@ function restore_options() {
   });
 }
 
-function easy_format() {
+function easy_format(event) {
+  if (event && typeof event.preventDefault === "function") {
+    event.preventDefault();
+  }
   var format = this.format;
   if (format == "a_link") {
     format = '<a href="%url%">%text%</a>';
