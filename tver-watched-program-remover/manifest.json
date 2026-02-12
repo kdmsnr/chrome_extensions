@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TVer Watched Program Remover",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Remove watched programs from the My Page of TVer.",
   "permissions": [
     "storage",
