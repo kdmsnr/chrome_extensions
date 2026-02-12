@@ -3,66 +3,51 @@ if (!globalThis.__tverWatchedRemoverInitialized) {
 
   let observer;
   let featureEnabled = true;
-  let lastHref = location.href;
-  let routeWatchTimer;
+  let scheduled = false;
 
   function isTargetPage() {
     return location.pathname.startsWith('/mypage/fav');
   }
 
   function applyVisibility() {
-    if (!isTargetPage()) return;
     const core = globalThis.TVerWatchedProgramRemoverCore;
     if (!core) return;
+    if (!isTargetPage()) return;
     core.applyWatchedVisibility({ featureEnabled });
+  }
+
+  function scheduleApplyVisibility() {
+    if (scheduled) return;
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      applyVisibility();
+    });
   }
 
   function initObserver() {
     if (observer) return;
-    observer = new MutationObserver(applyVisibility);
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
+    observer = new MutationObserver(() => {
+      if (!isTargetPage()) return;
+      scheduleApplyVisibility();
+    });
 
-  function stopObserver() {
-    if (observer) {
-      observer.disconnect();
-      observer = null;
+    const target = document.body || document.documentElement;
+    if (target) {
+      observer.observe(target, { childList: true, subtree: true });
     }
-  }
-
-  function syncStateWithPage() {
-    if (!isTargetPage()) {
-      stopObserver();
-      return;
-    }
-
-    if (featureEnabled) {
-      initObserver();
-    } else {
-      stopObserver();
-    }
-    applyVisibility();
-  }
-
-  function startRouteWatcher() {
-    if (routeWatchTimer) return;
-    routeWatchTimer = setInterval(() => {
-      if (lastHref === location.href) return;
-      lastHref = location.href;
-      syncStateWithPage();
-    }, 500);
   }
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'toggleFeature') {
       featureEnabled = message.featureEnabled;
-      syncStateWithPage();
+      applyVisibility();
     }
   });
 
   chrome.storage.sync.get(['featureEnabled'], (result) => {
     featureEnabled = result.featureEnabled ?? true;
-    startRouteWatcher();
-    syncStateWithPage();
+    initObserver();
+    applyVisibility();
   });
 }
