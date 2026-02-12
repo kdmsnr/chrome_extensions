@@ -1,8 +1,17 @@
 let observer;
 let featureEnabled = true;
 
+function getEpisodeLinks() {
+  const links = new Set();
+
+  document.querySelectorAll('a[class^="EpisodeItem_"]').forEach(link => links.add(link));
+  document.querySelectorAll('li > a[href^="/episodes/"]').forEach(link => links.add(link));
+
+  return [...links];
+}
+
 function toggleWatchedPrograms() {
-  document.querySelectorAll('a[class^="EpisodeItem_"]').forEach(a => {
+  getEpisodeLinks().forEach(a => {
     const progressBar = a.querySelector('span[class^="ProgressBar_progress"]');
     const li = a.closest('li');
     if (progressBar && progressBar.style.width === '100%') {
