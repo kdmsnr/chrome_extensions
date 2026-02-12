@@ -16,7 +16,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://tver.jp/mypage/fav"],
+      "matches": ["https://tver.jp/mypage/*"],
       "js": ["watched-core.js", "main.js"],
       "run_at": "document_end"
     }
