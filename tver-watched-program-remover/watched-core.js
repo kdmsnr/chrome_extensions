@@ -1,4 +1,4 @@
-(function (global) {
+(function (root) {
   'use strict';
 
   function getEpisodeLinks(doc = document) {
@@ -33,8 +33,8 @@
     });
   }
 
-  global.TVerWatchedProgramRemoverCore = {
+  root.TVerWatchedProgramRemoverCore = {
     getEpisodeLinks,
     applyWatchedVisibility,
   };
-})(globalThis);
+})(typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : window));

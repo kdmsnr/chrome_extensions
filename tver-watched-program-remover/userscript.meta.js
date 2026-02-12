@@ -4,7 +4,7 @@
 // @version      1.0.4
 // @description  Remove watched programs from TVer's My Page
 // @author       kdmsnr
-// @match        https://tver.jp/mypage/fav*
+// @match        https://tver.jp/*
 // @grant        none
 // @run-at       document-end
 // ==/UserScript==

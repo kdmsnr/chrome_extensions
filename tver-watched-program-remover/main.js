@@ -1,5 +1,7 @@
-if (!globalThis.__tverWatchedRemoverInitialized) {
-  globalThis.__tverWatchedRemoverInitialized = true;
+const root = typeof globalThis !== 'undefined' ? globalThis : (typeof self !== 'undefined' ? self : window);
+
+if (!root.__tverWatchedRemoverInitialized) {
+  root.__tverWatchedRemoverInitialized = true;
 
   let observer;
   let featureEnabled = true;
@@ -10,7 +12,7 @@ if (!globalThis.__tverWatchedRemoverInitialized) {
   }
 
   function applyVisibility() {
-    const core = globalThis.TVerWatchedProgramRemoverCore;
+    const core = root.TVerWatchedProgramRemoverCore;
     if (!core) return;
     if (!isTargetPage()) return;
     core.applyWatchedVisibility({ featureEnabled });
