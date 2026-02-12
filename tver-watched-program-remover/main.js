@@ -1,38 +1,15 @@
 let observer;
 let featureEnabled = true;
 
-function getEpisodeLinks() {
-  const links = new Set();
-
-  document.querySelectorAll('a[class^="EpisodeItem_"]').forEach(link => links.add(link));
-  document.querySelectorAll('li > a[href^="/episodes/"]').forEach(link => links.add(link));
-
-  return [...links];
-}
-
-function toggleWatchedPrograms() {
-  getEpisodeLinks().forEach(a => {
-    const progressBar = a.querySelector('span[class^="ProgressBar_progress"]');
-    const li = a.closest('li');
-    if (progressBar && progressBar.style.width === '100%') {
-      if (li) {
-        li.style.display = featureEnabled ? 'none' : '';
-      } else {
-        a.style.display = featureEnabled ? 'none' : '';
-      }
-    } else {
-      if (li) {
-        li.style.display = '';
-      }
-      a.style.display = '';
-    }
-  });
+function applyVisibility() {
+  const core = globalThis.TVerWatchedProgramRemoverCore;
+  if (!core) return;
+  core.applyWatchedVisibility({ featureEnabled });
 }
 
 function initObserver() {
   if (observer) return;
-  const observerCallback = () => toggleWatchedPrograms();
-  observer = new MutationObserver(observerCallback);
+  observer = new MutationObserver(applyVisibility);
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
@@ -44,14 +21,14 @@ function stopObserver() {
 }
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === "toggleFeature") {
+  if (message.type === 'toggleFeature') {
     featureEnabled = message.featureEnabled;
     if (featureEnabled) {
       initObserver();
-      toggleWatchedPrograms();
+      applyVisibility();
     } else {
       stopObserver();
-      toggleWatchedPrograms();
+      applyVisibility();
     }
   }
 });
@@ -60,6 +37,6 @@ chrome.storage.sync.get(['featureEnabled'], (result) => {
   featureEnabled = result.featureEnabled ?? true;
   if (featureEnabled) {
     initObserver();
-    toggleWatchedPrograms();
   }
+  applyVisibility();
 });

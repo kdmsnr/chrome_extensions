@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TVer Watched Program Remover",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Remove watched programs from the My Page of TVer.",
   "permissions": [
     "storage",
@@ -17,7 +17,7 @@
   "content_scripts": [
     {
       "matches": ["https://tver.jp/mypage/fav"],
-      "js": ["main.js"],
+      "js": ["watched-core.js", "main.js"],
       "run_at": "document_end"
     }
   ]
