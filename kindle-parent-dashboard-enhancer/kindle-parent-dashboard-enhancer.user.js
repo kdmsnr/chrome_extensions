@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kindle Parent Dashboard Enhancer
 // @namespace    https://kdmsnr.com
-// @version      1.9.25
+// @version      1.9.26
 // @description  parents.amazon.co.jp add-content: auto collect titles via infinite scroll into a persistent local DB + simple substring search (UI isolated in Shadow DOM).
 // @match        https://parents.amazon.co.jp/settings/*
 // @grant        none
@@ -198,6 +198,49 @@
     if (state.childDirectedIdCandidates.includes(id)) return false;
     state.childDirectedIdCandidates.push(id);
     return true;
+  }
+
+  function discoverChildCandidatesFromPage() {
+    let added = 0;
+    const add = (id) => {
+      if (ensureChildCandidate(sessionState, id)) added++;
+    };
+
+    try {
+      const u = new URL(window.location.href);
+      const paramKeys = ['childDirectedId', 'directedId', 'childId', 'selectedChildDirectedId'];
+      for (const k of paramKeys) add(u.searchParams.get(k) || '');
+    } catch {
+      // no-op
+    }
+
+    const attrSelectors = [
+      '[data-directed-id]',
+      '[data-child-directed-id]',
+      '[data-child-id]'
+    ];
+    for (const sel of attrSelectors) {
+      for (const el of document.querySelectorAll(sel)) {
+        add(el.getAttribute('data-directed-id') || '');
+        add(el.getAttribute('data-child-directed-id') || '');
+        add(el.getAttribute('data-child-id') || '');
+      }
+    }
+
+    const re = /amzn1\.account\.[A-Z0-9]+/g;
+    const scripts = Array.from(document.scripts || []);
+    for (const s of scripts) {
+      const txt = typeof s.textContent === 'string' ? s.textContent : '';
+      if (!txt) continue;
+      if (txt.length > 300000) continue;
+      const found = txt.match(re) || [];
+      for (const id of found) add(id);
+    }
+
+    if (!sessionState.childDirectedId && sessionState.childDirectedIdCandidates.length > 0) {
+      sessionState.childDirectedId = sessionState.childDirectedIdCandidates[0];
+    }
+    return added;
   }
 
   // ===== card helpers (READ ONLY) =====
@@ -725,7 +768,11 @@
       }
 
       const childId = sessionState.childDirectedId;
-      const childCandidates = Array.from(new Set([childId, ...(sessionState.childDirectedIdCandidates || [])].filter(Boolean)));
+      let childCandidates = Array.from(new Set([childId, ...(sessionState.childDirectedIdCandidates || [])].filter(Boolean)));
+      if (childCandidates.length === 0) {
+        discoverChildCandidatesFromPage();
+        childCandidates = Array.from(new Set([sessionState.childDirectedId, ...(sessionState.childDirectedIdCandidates || [])].filter(Boolean)));
+      }
       if (childCandidates.length === 0) {
         setStatus('Toggle: child id unknown (toggle once on page first)');
         return false;
@@ -1058,6 +1105,7 @@
   function boot() {
     if (window.__kpdeBooted) return;
     window.__kpdeBooted = true;
+    installApiLearning();
     installRouteWatcher();
     const onRouteChange = () => window.setTimeout(applyRoute, 0);
     window.addEventListener('kpde-routechange', onRouteChange);
