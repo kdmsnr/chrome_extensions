@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kindle Parent Dashboard Enhancer
 // @namespace    https://kdmsnr.com
-// @version      1.9.20
+// @version      1.9.21
 // @description  parents.amazon.co.jp add-content: auto collect titles via infinite scroll into a persistent local DB + simple substring search (UI isolated in Shadow DOM).
 // @match        https://parents.amazon.co.jp/settings/add-content?isChildSelected=true
 // @grant        none
@@ -141,7 +141,7 @@
   function getFilteredHits(db, qValue) {
     const tokens = searchNorm(qValue).split(' ').filter(Boolean);
     return tokens.length === 0
-      ? db
+      ? []
       : db.filter(x => {
         const searchable = searchNorm(x.title || '');
         return tokens.every(t => searchable.includes(t));

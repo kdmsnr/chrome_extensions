@@ -87,6 +87,8 @@ test('getFilteredHits supports AND search and full/half width digits', () => {
     { title: '婚活ストラテジー（1）' },
     { title: '別タイトル（3）' }
   ];
+  assert.deepEqual(toPlain(kpde.getFilteredHits(db, '')), []);
+  assert.deepEqual(toPlain(kpde.getFilteredHits(db, '   ')), []);
   assert.deepEqual(
     kpde.getFilteredHits(db, 'cosmos 8').map((x) => x.title),
     ['COSMOS（８）']
