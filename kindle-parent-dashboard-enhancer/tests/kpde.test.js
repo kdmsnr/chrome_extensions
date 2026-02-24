@@ -15,6 +15,7 @@ function loadKpdeExports() {
     console,
     setTimeout,
     clearTimeout,
+    URL,
     __KPDE_TEST_EXPORTS__: {}
   };
   context.globalThis = context;
@@ -120,4 +121,23 @@ test('clearPersistedData removes DB and state keys', () => {
   };
   kpde.clearPersistedData(store);
   assert.deepEqual(removed, [kpde.DB_KEY, kpde.STATE_KEY]);
+});
+
+test('isTargetPage requires add-content path and isChildSelected=true', () => {
+  assert.equal(
+    kpde.isTargetPage('https://parents.amazon.co.jp/settings/add-content?isChildSelected=true'),
+    true
+  );
+  assert.equal(
+    kpde.isTargetPage('https://parents.amazon.co.jp/settings/add-content?isChildSelected=false'),
+    false
+  );
+  assert.equal(
+    kpde.isTargetPage('https://parents.amazon.co.jp/settings/add-content'),
+    false
+  );
+  assert.equal(
+    kpde.isTargetPage('https://parents.amazon.co.jp/settings/child-settings'),
+    false
+  );
 });

@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Kindle Parent Dashboard Enhancer
 // @namespace    https://kdmsnr.com
-// @version      1.9.21
+// @version      1.9.25
 // @description  parents.amazon.co.jp add-content: auto collect titles via infinite scroll into a persistent local DB + simple substring search (UI isolated in Shadow DOM).
-// @match        https://parents.amazon.co.jp/settings/add-content?isChildSelected=true
+// @match        https://parents.amazon.co.jp/settings/*
 // @grant        none
 // ==/UserScript==
 
@@ -17,6 +17,7 @@
   // ===== Persistent DB key (FINAL / DO NOT CHANGE) =====
   const DB_KEY = 'kindle_parent_dashboard_enhancer_db';
   const STATE_KEY = 'kindle_parent_dashboard_enhancer_state';
+  const TARGET_PATH = '/settings/add-content';
   const sessionState = {
     csrfToken: '',
     childDirectedId: '',
@@ -34,6 +35,19 @@
   const normalizeDigits = (s) =>
     (s || '').replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
   const searchNorm = (s) => normalizeDigits(norm(s)).toLowerCase();
+  const isTargetPage = (href) => {
+    try {
+      const fallbackBase = 'https://parents.amazon.co.jp/';
+      const base = (typeof window !== 'undefined' && window.location && window.location.href)
+        ? window.location.href
+        : fallbackBase;
+      const raw = href || base;
+      const u = new URL(raw, base);
+      return u.pathname === TARGET_PATH && u.searchParams.get('isChildSelected') === 'true';
+    } catch {
+      return false;
+    }
+  };
 
   function resolveAsinByTitle(state, key, title, db) {
     const map = state?.titleToAsin || {};
@@ -978,6 +992,79 @@
     render();
   }
 
+  function unmountUI() {
+    const host = document.getElementById('kpde-host');
+    if (host && host.parentNode) host.parentNode.removeChild(host);
+  }
+
+  function ensureUiMountedWithRetry(maxAttempts, intervalMs) {
+    let attempts = 0;
+    const limit = Number.isFinite(maxAttempts) ? maxAttempts : 40;
+    const interval = Number.isFinite(intervalMs) ? intervalMs : 250;
+    const tick = () => {
+      attempts += 1;
+      if (!isTargetPage()) return true;
+      if (document.getElementById('kpde-host')) return true;
+      if (!document.body) return false;
+      mountUI();
+      return !!document.getElementById('kpde-host');
+    };
+    if (tick()) return;
+    const timer = window.setInterval(() => {
+      if (tick() || attempts >= limit) window.clearInterval(timer);
+    }, interval);
+  }
+
+  function installRouteWatcher() {
+    if (window.__kpdeRouteWatcherInstalled) return;
+    window.__kpdeRouteWatcherInstalled = true;
+    const emit = () => window.dispatchEvent(new Event('kpde-routechange'));
+    let lastHref = window.location.href;
+    const emitIfHrefChanged = () => {
+      const now = window.location.href;
+      if (now === lastHref) return false;
+      lastHref = now;
+      emit();
+      return true;
+    };
+    const wrapHistory = (name) => {
+      const original = window.history[name];
+      window.history[name] = function(...args) {
+        const out = original.apply(this, args);
+        window.setTimeout(() => { emitIfHrefChanged(); }, 0);
+        return out;
+      };
+    };
+    wrapHistory('pushState');
+    wrapHistory('replaceState');
+    window.addEventListener('popstate', () => { emitIfHrefChanged(); });
+    window.addEventListener('hashchange', () => { emitIfHrefChanged(); });
+    window.setInterval(() => {
+      const changed = emitIfHrefChanged();
+      if (!changed && isTargetPage() && !document.getElementById('kpde-host')) emit();
+    }, 500);
+  }
+
+  function applyRoute() {
+    if (!isTargetPage()) {
+      unmountUI();
+      return;
+    }
+    installApiLearning();
+    enrichDbWithAsin(loadState());
+    ensureUiMountedWithRetry();
+  }
+
+  function boot() {
+    if (window.__kpdeBooted) return;
+    window.__kpdeBooted = true;
+    installRouteWatcher();
+    const onRouteChange = () => window.setTimeout(applyRoute, 0);
+    window.addEventListener('kpde-routechange', onRouteChange);
+    window.addEventListener('pageshow', onRouteChange);
+    onRouteChange();
+  }
+
   if (globalThis.__KPDE_TEST_EXPORTS__ && typeof globalThis.__KPDE_TEST_EXPORTS__ === 'object') {
     Object.assign(globalThis.__KPDE_TEST_EXPORTS__, {
       DB_KEY,
@@ -990,12 +1077,15 @@
       normalizePersistedState,
       getFilteredHits,
       sortByTitle,
-      clearPersistedData
+      clearPersistedData,
+      isTargetPage
     });
     return;
   }
 
-  installApiLearning();
-  enrichDbWithAsin(loadState());
-  mountUI();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot, { once: true });
+  } else {
+    boot();
+  }
 })();
