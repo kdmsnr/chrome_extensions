@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kindle Parent Dashboard Enhancer
 // @namespace    https://kdmsnr.com
-// @version      1.9.13
+// @version      1.9.20
 // @description  parents.amazon.co.jp add-content: auto collect titles via infinite scroll into a persistent local DB + simple substring search (UI isolated in Shadow DOM).
 // @match        https://parents.amazon.co.jp/settings/add-content?isChildSelected=true
 // @grant        none
@@ -17,8 +17,6 @@
   // ===== Persistent DB key (FINAL / DO NOT CHANGE) =====
   const DB_KEY = 'kindle_parent_dashboard_enhancer_db';
   const STATE_KEY = 'kindle_parent_dashboard_enhancer_state';
-  const AUTO_SCROLL_STEP_RATIO = 0.9;
-  const AUTO_SCROLL_MIN_STEP_PX = 320;
   const sessionState = {
     csrfToken: '',
     childDirectedId: '',
@@ -140,6 +138,26 @@
     };
   }
 
+  function getFilteredHits(db, qValue) {
+    const tokens = searchNorm(qValue).split(' ').filter(Boolean);
+    return tokens.length === 0
+      ? db
+      : db.filter(x => {
+        const searchable = searchNorm(x.title || '');
+        return tokens.every(t => searchable.includes(t));
+      });
+  }
+
+  function sortByTitle(items) {
+    return items.slice().sort((a, b) =>
+      (a.title || a.key || '').localeCompare(
+        (b.title || b.key || ''),
+        'ja',
+        { numeric: true, sensitivity: 'base' }
+      )
+    );
+  }
+
   function loadState() {
     try {
       const raw = JSON.parse(localStorage.getItem(STATE_KEY));
@@ -151,6 +169,12 @@
 
   function saveState(state) {
     localStorage.setItem(STATE_KEY, JSON.stringify(normalizePersistedState(state)));
+  }
+
+  function clearPersistedData(store) {
+    const target = store || localStorage;
+    target.removeItem(DB_KEY);
+    target.removeItem(STATE_KEY);
   }
 
   function ensureChildCandidate(state, id) {
@@ -523,10 +547,7 @@
         padding-bottom: 6px;
         margin-bottom: 6px;
         font-weight: 600;
-        cursor: pointer;
-      }
-      .item:hover {
-        background: #f5f8ff;
+        cursor: default;
       }
       .item.focused {
         outline: 2px solid #4b6fff;
@@ -564,8 +585,8 @@
       </div>
 
       <div class="row controls" style="margin-top:8px;">
-        <button id="autoFast" class="btn primary">Fast Scan</button>
-        <button id="autoSafe" class="btn">Safe Scan</button>
+        <button id="autoFast" class="btn primary">Scan (Bulk)</button>
+        <button id="autoSafe" class="btn">Scan (Step)</button>
         <button id="stop" class="btn">Stop</button>
       </div>
 
@@ -583,6 +604,7 @@
       <div class="row space" style="margin-top:8px;">
         <div id="dbStat" class="hint" style="margin-top:0;">DB: 0</div>
         <div class="row" style="gap:6px;">
+          <button id="addAllHits" class="btn small">Add All Hits</button>
           <button id="dumpDb" class="btn small">Dump DB</button>
           <button id="clear" class="btn small">Clear DB</button>
         </div>
@@ -620,68 +642,6 @@
         if (mapped === asin) return card;
       }
       return null;
-    }
-
-    function focusCard(card) {
-      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      card.style.outline = '2px solid #4b6fff';
-      card.style.outlineOffset = '2px';
-      window.setTimeout(() => {
-        card.style.outline = '';
-        card.style.outlineOffset = '';
-      }, 2000);
-    }
-
-    async function ensureCardVisibleByKey(key) {
-      let found = findVisibleCardByKey(key);
-      if (found) return found;
-
-      const scroller = findScrollContainer();
-      const step = () => {
-        const s = getScrollInfo(scroller);
-        const px = Math.max(AUTO_SCROLL_MIN_STEP_PX, Math.floor(s.viewport * AUTO_SCROLL_STEP_RATIO));
-        if (scroller) scroller.scrollBy(0, px);
-        else window.scrollBy(0, px);
-      };
-
-      if (scroller) scroller.scrollTo(0, 0);
-      else window.scrollTo(0, 0);
-      await sleep(300);
-
-      let stable = 0;
-      let lastTop = getScrollInfo(scroller).top;
-      for (let i = 0; i < 1200; i++) {
-        found = findVisibleCardByKey(key);
-        if (found) return found;
-
-        step();
-        await sleep(450);
-
-        const nowTop = getScrollInfo(scroller).top;
-        if (nowTop > lastTop + 2) {
-          lastTop = nowTop;
-          stable = 0;
-        } else {
-          stable++;
-          if (stable >= 8) break;
-        }
-      }
-      return null;
-    }
-
-    async function jumpToTitle(key, labelEl) {
-      stopFlag = true;
-      if (focusedResultEl) focusedResultEl.classList.remove('focused');
-      focusedResultEl = labelEl;
-      focusedResultEl.classList.add('focused');
-
-      const found = await ensureCardVisibleByKey(key);
-      if (found) {
-        focusCard(found);
-        setStatus('Jump: found');
-        return;
-      }
-      setStatus('Jump: not found on current loaded cards');
     }
 
     function isCardAlreadyAdded(card) {
@@ -728,11 +688,15 @@
       if (target.knob) knob.className = target.knob;
     }
 
-    async function toggleChildKindleByApi(item, labelEl, targetStatusOverride) {
-      stopFlag = true;
+    async function toggleChildKindleByApi(item, labelEl, targetStatusOverride, options) {
+      const opts = options || {};
+      if (opts.stopScan !== false) stopFlag = true;
       if (focusedResultEl) focusedResultEl.classList.remove('focused');
-      focusedResultEl = labelEl;
-      focusedResultEl.classList.add('focused');
+      focusedResultEl = null;
+      if (labelEl && opts.focus !== false) {
+        focusedResultEl = labelEl;
+        focusedResultEl.classList.add('focused');
+      }
 
       const state = loadState();
       state.titleToAsin = state.titleToAsin || {};
@@ -830,8 +794,42 @@
           syncSwitchVisual(input, targetStatus === 'ADDED');
         }
       }
-      setStatus('Done');
+      if (!opts.suppressDoneStatus) setStatus('Done');
       return true;
+    }
+
+    async function addAllHits() {
+      const db = loadDB();
+      const hits = sortByTitle(getFilteredHits(db, $('q').value));
+      if (hits.length === 0) {
+        setStatus('Add All: no hits');
+        return;
+      }
+
+      stopFlag = false;
+      let okCount = 0;
+      let failCount = 0;
+
+      for (let i = 0; i < hits.length; i++) {
+        if (stopFlag) {
+          setStatus(`Add All: stopped. ok=${okCount}, fail=${failCount}, total=${hits.length}`);
+          render();
+          return;
+        }
+        const item = hits[i];
+        setStatus(`Add All: sending ${i + 1}/${hits.length}`);
+        const ok = await toggleChildKindleByApi(item, null, 'ADDED', {
+          stopScan: false,
+          focus: false,
+          suppressDoneStatus: true
+        });
+        if (ok) okCount++;
+        else failCount++;
+        await sleep(120);
+      }
+
+      setStatus(`Add All: done. ok=${okCount}, fail=${failCount}, total=${hits.length}`);
+      render();
     }
 
     function render() {
@@ -839,13 +837,7 @@
       const state = loadState();
       state.titleToAsin = state.titleToAsin || {};
       state.asinStatus = state.asinStatus || {};
-      const tokens = searchNorm($('q').value).split(' ').filter(Boolean);
-      const hits = tokens.length === 0
-        ? db
-        : db.filter(x => {
-          const searchable = searchNorm(x.title || '');
-          return tokens.every(t => searchable.includes(t));
-        });
+      const hits = getFilteredHits(db, $('q').value);
 
       $('dbStat').textContent = `DB: ${db.length}`;
       $('hitStat').textContent = `Hit: ${hits.length}`;
@@ -854,26 +846,16 @@
       const list = $('list');
       list.innerHTML = '';
 
-      hits
-        .slice()
-        .sort((a, b) =>
-          (a.title || a.key || '').localeCompare(
-            (b.title || b.key || ''),
-            'ja',
-            { numeric: true, sensitivity: 'base' }
-          )
-        )
+      sortByTitle(hits)
         .slice(0, 200)
         .forEach(it => {
           const row = document.createElement('div');
           row.className = 'itemRow';
 
-          const jumpBtn = document.createElement('button');
-          jumpBtn.className = 'item itemText';
-          jumpBtn.type = 'button';
-          jumpBtn.textContent = it.title;
-          jumpBtn.addEventListener('click', () => { jumpToTitle(it.key, jumpBtn); });
-          row.appendChild(jumpBtn);
+          const titleEl = document.createElement('div');
+          titleEl.className = 'item itemText';
+          titleEl.textContent = it.title;
+          row.appendChild(titleEl);
 
           const asin = it.asin || state.titleToAsin[it.key] || '';
           const knownStatus = asin ? state.asinStatus[asin] : '';
@@ -892,7 +874,7 @@
             const targetStatus = toggle.checked ? 'ADDED' : 'NOT_ADDED';
             setStatus('Sending...');
             try {
-              const ok = await toggleChildKindleByApi(it, jumpBtn, targetStatus);
+              const ok = await toggleChildKindleByApi(it, titleEl, targetStatus);
               if (ok) {
                 toggle.indeterminate = false;
               } else {
@@ -967,6 +949,7 @@
 
     $('autoFast').addEventListener('click', () => autoScrollIngest('fast'));
     $('autoSafe').addEventListener('click', () => autoScrollIngest('safe'));
+    $('addAllHits').addEventListener('click', addAllHits);
     $('stop').addEventListener('click', () => { stopFlag = true; setStatus('Stopping...'); });
     $('dumpDb').addEventListener('click', () => {
       const db = loadDB();
@@ -986,14 +969,30 @@
       setStatus(`Dumped DB to console (${db.length})`);
     });
     $('clear').addEventListener('click', () => {
-      localStorage.removeItem(DB_KEY);
-      localStorage.removeItem(STATE_KEY);
+      clearPersistedData(localStorage);
       setStatus('DB+state cleared');
       render();
     });
     $('q').addEventListener('input', render);
 
     render();
+  }
+
+  if (globalThis.__KPDE_TEST_EXPORTS__ && typeof globalThis.__KPDE_TEST_EXPORTS__ === 'object') {
+    Object.assign(globalThis.__KPDE_TEST_EXPORTS__, {
+      DB_KEY,
+      STATE_KEY,
+      norm,
+      normalizeDigits,
+      searchNorm,
+      sanitizeStringMap,
+      sanitizeAsinStatusMap,
+      normalizePersistedState,
+      getFilteredHits,
+      sortByTitle,
+      clearPersistedData
+    });
+    return;
   }
 
   installApiLearning();

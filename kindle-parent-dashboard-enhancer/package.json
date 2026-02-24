@@ -1,0 +1,8 @@
+{
+  "name": "kindle-parent-dashboard-enhancer",
+  "private": true,
+  "scripts": {
+    "check": "node --check kindle-parent-dashboard-enhancer.user.js",
+    "test": "node --test"
+  }
+}
