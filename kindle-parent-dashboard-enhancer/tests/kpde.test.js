@@ -8,16 +8,21 @@ function toPlain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function loadKpdeExports() {
+function loadKpdeExports(overrides) {
   const scriptPath = path.resolve(__dirname, '..', 'kindle-parent-dashboard-enhancer.user.js');
   const code = fs.readFileSync(scriptPath, 'utf8');
   const context = {
     console,
     setTimeout,
     clearTimeout,
+    setInterval,
+    clearInterval,
     URL,
     __KPDE_TEST_EXPORTS__: {}
   };
+  if (overrides && typeof overrides === 'object') {
+    Object.assign(context, overrides);
+  }
   context.globalThis = context;
   vm.createContext(context);
   vm.runInContext(code, context, { filename: scriptPath });
@@ -139,5 +144,44 @@ test('isTargetPage requires add-content path and isChildSelected=true', () => {
   assert.equal(
     kpde.isTargetPage('https://parents.amazon.co.jp/settings/child-settings'),
     false
+  );
+});
+
+test('discoverChildCandidatesFromPage collects ids from URL, data attrs, and scripts', () => {
+  const mockWindow = {
+    location: {
+      href: 'https://parents.amazon.co.jp/settings/add-content?isChildSelected=true&childDirectedId=amzn1.account.ABC123'
+    }
+  };
+  const dataNodes = [
+    {
+      getAttribute(name) {
+        if (name === 'data-child-directed-id') return 'amzn1.account.DEF456';
+        return '';
+      }
+    }
+  ];
+  const mockDocument = {
+    querySelectorAll(selector) {
+      if (selector === '[data-directed-id]') return [];
+      if (selector === '[data-child-directed-id]') return dataNodes;
+      if (selector === '[data-child-id]') return [];
+      return [];
+    },
+    scripts: [
+      {
+        textContent: 'window.__STATE__={"selectedChild":"amzn1.account.GHI789"};'
+      }
+    ]
+  };
+  const exportsWithDom = loadKpdeExports({ window: mockWindow, document: mockDocument });
+  const added = exportsWithDom.discoverChildCandidatesFromPage();
+  const snapshot = toPlain(exportsWithDom.getSessionStateSnapshot());
+
+  assert.equal(added >= 1, true);
+  assert.equal(snapshot.childDirectedId, 'amzn1.account.ABC123');
+  assert.deepEqual(
+    snapshot.childDirectedIdCandidates,
+    ['amzn1.account.ABC123', 'amzn1.account.DEF456', 'amzn1.account.GHI789']
   );
 });

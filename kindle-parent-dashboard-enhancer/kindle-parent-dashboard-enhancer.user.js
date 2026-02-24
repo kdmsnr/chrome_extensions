@@ -243,6 +243,15 @@
     return added;
   }
 
+  function getSessionStateSnapshot() {
+    return {
+      childDirectedId: sessionState.childDirectedId || '',
+      childDirectedIdCandidates: Array.isArray(sessionState.childDirectedIdCandidates)
+        ? sessionState.childDirectedIdCandidates.slice()
+        : []
+    };
+  }
+
   // ===== card helpers (READ ONLY) =====
   function getCards() {
     return Array.from(document.querySelectorAll(CARD_SEL));
@@ -1126,7 +1135,9 @@
       getFilteredHits,
       sortByTitle,
       clearPersistedData,
-      isTargetPage
+      isTargetPage,
+      discoverChildCandidatesFromPage,
+      getSessionStateSnapshot
     });
     return;
   }
