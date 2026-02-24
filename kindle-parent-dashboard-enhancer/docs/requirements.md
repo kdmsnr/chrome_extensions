@@ -1,36 +1,83 @@
 # Kindle Parent Dashboard Enhancer Requirements
 
-## Goal
-- On `parents.amazon.co.jp/settings/add-content`, allow bulk collection first, then Add/Remove from DB results.
+## Scope
+- Target page: `https://parents.amazon.co.jp/settings/add-content?isChildSelected=true`
+- Purpose: scan/add-content catalog into local DB, then operate Add/Remove from search results even when the card is not currently visible.
 
-## Functional Requirements
-- The page can be auto-scrolled to load more cards.
-- Users can build DB first (title-based seed), then operate on DB items later.
-- DB items support Add/Remove action from the search list.
-- Add/Remove uses `POST /ajax/update-add-content-status-batch` and requires ASIN.
-- ASIN is learned from page runtime/network data (`/ajax/*`, update payloads).
-- DB keeps title and ASIN; when ASIN is known, ASIN is preferred as identity.
-- Add/Remove should work even when the target card is not currently visible on page.
-- If target card is visible, switch UI should be visually synced after API success.
+## UI Requirements
+- Control buttons:
+  - `Scan (Bulk)`: fast scan; ingest is done mainly at stop/end.
+  - `Scan (Step)`: safe scan; ingest while scrolling.
+  - `Stop`: stops current scan/bulk operation.
+  - `Add All Hits`: sends Add (`ADDED`) request for all current search hits.
+  - `Dump DB`: prints current DB and state to browser console.
+  - `Clear DB`: clears both DB and state.
+- Search area:
+  - input box + `Hit: N`.
+  - result rows show title + checkbox (Add/Remove).
+  - title row is not a jump button (no auto-scroll-to-item on click).
 
-## Data Model (Current Policy)
-- DB record fields:
-  - `key`: title key (from aria-label prefix or visible title)
-  - `title`: display title
-  - `asin`: optional, filled when learned
-  - `seenAt`: timestamp
-- Runtime state fields:
-  - `titleToAsin`
-  - `asinStatus`
-  - `asinContentType`
+## Scan and Ingest Requirements
+- Infinite scroll is used to load more cards.
+- DB ingest source is visible cards in DOM.
+- Two scan modes:
+  - `Scan (Bulk)`: prioritizes speed.
+  - `Scan (Step)`: prioritizes capture robustness.
+- On scan stop/end, ingest runs and DB/UI stats are refreshed.
+
+## Search Requirements
+- Search uses whitespace-split AND matching.
+- Title comparison is normalized by:
+  - space normalization (including full-width space).
+  - full-width/half-width digit equivalence.
+  - lowercasing.
+- Result list is sorted by locale-aware title order (`ja`, numeric).
+- UI rendering limit for results is first 200 items.
+
+## Add/Remove Requirements
+- Per-row checkbox sends target status explicitly:
+  - checked => `ADDED`
+  - unchecked => `NOT_ADDED`
+- `Add All Hits` sends `ADDED` for all current hits in sorted order.
+- API endpoint: `POST /ajax/update-add-content-status-batch`.
+- Request needs:
+  - ASIN
+  - child directed id
+  - CSRF token
+  - content type (default `EBOOK` if unknown)
+- If the target card is visible, switch visuals are synced after success.
+- If not visible, request can still succeed but on-page switch cannot be visually synced immediately.
+
+## ASIN Learning Requirements
+- ASIN is learned from:
+  - observed `/ajax/*` response JSON.
+  - observed payloads to `/ajax/update-add-content-status-batch`.
+  - pending clicked title when payload includes a single ASIN.
+- Title->ASIN resolution order:
+  - direct key/title map lookup
+  - normalized-title unique match
+  - DB fallback (`asin` on matching record)
+
+## Persistence Requirements
+- Local DB key: `kindle_parent_dashboard_enhancer_db`
+- State key: `kindle_parent_dashboard_enhancer_state`
+- DB record schema:
+  - `key` (string)
+  - `title` (string)
+  - `asin` (optional string)
+  - `seenAt` (number)
+- Persisted state schema (minimal):
+  - `titleToAsin: Record<string, string>`
+  - `asinStatus: Record<string, "ADDED" | "NOT_ADDED">`
+- Session-only (not persisted):
+  - `csrfToken`
   - `childDirectedId`
+  - `childDirectedIdCandidates`
+  - `asinContentType`
+- `Clear DB` must remove both DB key and state key.
 
-## Behavior Rules
-- If ASIN is unknown for an item, Add/Remove is not sent and status shows unknown.
-- If childDirectedId is unknown, Add/Remove is not sent and status shows unknown.
-- Search supports whitespace AND matching and full-width/half-width digit equivalence.
-
-## Known Constraints
-- Some cards may not have enough DOM info for direct ASIN extraction.
-- Visual toggle sync is only possible when the card is in current DOM.
-- For non-visible items, API action may succeed but on-page toggle cannot be visibly updated immediately.
+## Failure/Status Requirements
+- If ASIN is missing: show `Toggle: asin missing (scan first)` and do not send request.
+- If child id is unknown: show `Toggle: child id unknown (toggle once on page first)` and do not send request.
+- If CSRF is unknown: show `Toggle: csrf unknown` and do not send request.
+- On API/network failures, show request error status and keep UI consistent (checkbox rollback on single-row operation).
