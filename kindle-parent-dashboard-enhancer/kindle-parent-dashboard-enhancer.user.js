@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kindle Parent Dashboard Enhancer
 // @namespace    https://kdmsnr.com
-// @version      1.7.4
+// @version      1.9.12
 // @description  parents.amazon.co.jp add-content: auto collect titles via infinite scroll into a persistent local DB + simple substring search (UI isolated in Shadow DOM).
 // @match        https://parents.amazon.co.jp/settings/add-content?isChildSelected=true
 // @grant        none
@@ -17,7 +17,6 @@
   // ===== Persistent DB key (FINAL / DO NOT CHANGE) =====
   const DB_KEY = 'kindle_parent_dashboard_enhancer_db';
   const STATE_KEY = 'kindle_parent_dashboard_enhancer_state';
-  const AUTO_SCROLL_JUMP_TO_BOTTOM = true;
   const AUTO_SCROLL_STEP_RATIO = 0.9;
   const AUTO_SCROLL_MIN_STEP_PX = 320;
 
@@ -31,6 +30,34 @@
   const normalizeDigits = (s) =>
     (s || '').replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
   const searchNorm = (s) => normalizeDigits(norm(s)).toLowerCase();
+
+  function resolveAsinByTitle(state, key, title, db) {
+    const map = state?.titleToAsin || {};
+    const directKeys = [key, title, norm(key), norm(title)].filter(Boolean);
+    for (const k of directKeys) {
+      const v = map[k];
+      if (typeof v === 'string' && v) return v;
+    }
+
+    // fallback: allow normalized-title match only when it maps to a single ASIN.
+    const needle = searchNorm(key || title);
+    if (needle) {
+      let matchedAsin = '';
+      for (const [k, v] of Object.entries(map)) {
+        if (!v) continue;
+        if (searchNorm(k) !== needle) continue;
+        if (!matchedAsin) matchedAsin = v;
+        else if (matchedAsin !== v) {
+          matchedAsin = '';
+          break;
+        }
+      }
+      if (matchedAsin) return matchedAsin;
+    }
+
+    const dbHit = (db || []).find((x) => (x?.key === key || x?.title === key || x?.title === title) && x?.asin);
+    return dbHit?.asin || '';
+  }
 
   function loadDB() {
     try {
@@ -91,6 +118,15 @@
 
   function saveState(state) {
     localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  }
+
+  function ensureChildCandidate(state, id) {
+    if (!state || typeof state !== 'object') return false;
+    if (typeof id !== 'string' || !id.startsWith('amzn1.account.')) return false;
+    state.childDirectedIdCandidates = Array.isArray(state.childDirectedIdCandidates) ? state.childDirectedIdCandidates : [];
+    if (state.childDirectedIdCandidates.includes(id)) return false;
+    state.childDirectedIdCandidates.push(id);
+    return true;
   }
 
   // ===== card helpers (READ ONLY) =====
@@ -155,7 +191,10 @@
     state.titleToAsin = state.titleToAsin || {};
     state.asinStatus = state.asinStatus || {};
     state.asinContentType = state.asinContentType || {};
+    state.csrfToken = state.csrfToken || '';
+    state.childDirectedIdCandidates = Array.isArray(state.childDirectedIdCandidates) ? state.childDirectedIdCandidates : [];
     let pendingTitle = '';
+    let pendingTitleAt = 0;
 
     const capturePendingTitle = (ev) => {
       const card = ev.target && ev.target.closest ? ev.target.closest(CARD_SEL) : null;
@@ -165,6 +204,7 @@
       const title = extractTitle(card);
       const key = extractKey(card, title);
       pendingTitle = key || title || '';
+      pendingTitleAt = Date.now();
     };
 
     document.addEventListener('pointerdown', capturePendingTitle, true);
@@ -172,22 +212,28 @@
     document.addEventListener('change', capturePendingTitle, true);
 
     const isAsin = (v) => typeof v === 'string' && /^[A-Z0-9]{10}$/.test(v);
-    const pickTitle = (obj) => {
-      if (!obj || typeof obj !== 'object') return '';
-      const keys = ['title', 'displayTitle', 'itemTitle', 'name', 'activityTitle', 'bookTitle'];
-      for (const k of keys) {
-        const v = obj[k];
-        if (typeof v === 'string' && norm(v)) return norm(v);
-      }
+    const isChildDirectedId = (v) => typeof v === 'string' && v.startsWith('amzn1.account.');
+    const collectTitleCandidates = (obj) => {
+      if (!obj || typeof obj !== 'object') return [];
+      const out = new Set();
+      const keys = ['title', 'displayTitle', 'itemTitle', 'name', 'activityTitle', 'bookTitle', 'ariaLabel', 'aria-label'];
+      const push = (v) => {
+        if (typeof v !== 'string') return;
+        const t = norm(v);
+        if (!t) return;
+        out.add(t);
+        // aria-label like "TITLE, 本"
+        const beforeComma = norm((t.split(',')[0] || '').trim());
+        if (beforeComma) out.add(beforeComma);
+      };
+
+      for (const k of keys) push(obj[k]);
       // one-level deep fallback (e.g. metadata.title)
       for (const v of Object.values(obj)) {
         if (!v || typeof v !== 'object') continue;
-        for (const k of keys) {
-          const vv = v[k];
-          if (typeof vv === 'string' && norm(vv)) return norm(vv);
-        }
+        for (const k of keys) push(v[k]);
       }
-      return '';
+      return Array.from(out);
     };
 
     const learnFromResponseJson = (data) => {
@@ -206,10 +252,19 @@
         }
 
         const asin = cur.itemId || cur.asin || cur.contentId;
-        const title = pickTitle(cur);
-        if (isAsin(asin) && title) {
-          state.titleToAsin[title] = asin;
+        const titles = collectTitleCandidates(cur);
+        if (isAsin(asin) && titles.length > 0) {
+          for (const title of titles) state.titleToAsin[title] = asin;
           changed = true;
+        }
+
+        const childId = cur.childDirectedId || cur.directedId || cur.selectedChild?.directedId;
+        if (isChildDirectedId(childId)) {
+          if (ensureChildCandidate(state, childId)) changed = true;
+          if (!state.childDirectedId) {
+            state.childDirectedId = childId;
+            changed = true;
+          }
         }
 
         for (const v of Object.values(cur)) {
@@ -225,12 +280,16 @@
       const childMap = payload?.childToAllowlistStatusMap || {};
       const asinTypeMap = payload?.asinToContentTypeMap || {};
       const childId = Object.keys(childMap)[0] || '';
-      if (childId) state.childDirectedId = childId;
+      if (childId) {
+        if (state.childDirectedId !== childId) state.childDirectedId = childId;
+        ensureChildCandidate(state, childId);
+      }
       for (const asin of asins) {
         state.asinStatus[asin] = childMap[childId] || state.asinStatus[asin] || 'ADDED';
         state.asinContentType[asin] = asinTypeMap[asin] || state.asinContentType[asin] || 'EBOOK';
       }
-      if (pendingTitle && asins.length === 1) {
+      const isPendingFresh = pendingTitle && (Date.now() - pendingTitleAt) < 5000;
+      if (isPendingFresh && asins.length === 1) {
         state.titleToAsin[pendingTitle] = asins[0];
       }
       saveState(state);
@@ -239,6 +298,17 @@
 
     const originalFetch = window.fetch;
     window.fetch = async (...args) => {
+      try {
+        const init = args[1] || {};
+        const headers = init.headers || {};
+        const csrf = headers['x-amzn-csrf'] || headers['X-Amzn-Csrf'] || headers['X-AMZN-CSRF'];
+        if (csrf && state.csrfToken !== csrf) {
+          state.csrfToken = csrf;
+          saveState(state);
+        }
+      } catch {
+        // no-op
+      }
       const res = await originalFetch.apply(window, args);
       try {
         const url = typeof args[0] === 'string' ? args[0] : (args[0]?.url || '');
@@ -257,10 +327,24 @@
     };
 
     const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
     const originalSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.open = function(method, url, ...rest) {
       this.__kpdeUrl = typeof url === 'string' ? url : '';
       return originalOpen.call(this, method, url, ...rest);
+    };
+    XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
+      try {
+        if (typeof name === 'string' && name.toLowerCase() === 'x-amzn-csrf' && typeof value === 'string' && value) {
+          if (state.csrfToken !== value) {
+            state.csrfToken = value;
+            saveState(state);
+          }
+        }
+      } catch {
+        // no-op
+      }
+      return originalSetRequestHeader.call(this, name, value);
     };
     XMLHttpRequest.prototype.send = function(body) {
       try {
@@ -327,38 +411,10 @@
     };
   }
 
-  function nearBottom(scroller, px = 250) {
-    const s = getScrollInfo(scroller);
-    return (s.maxTop - s.top) < px;
-  }
-
   async function scrollStep(scroller) {
-    const s = getScrollInfo(scroller);
-    const step = Math.max(AUTO_SCROLL_MIN_STEP_PX, Math.floor(s.viewport * AUTO_SCROLL_STEP_RATIO));
-
-    if (AUTO_SCROLL_JUMP_TO_BOTTOM) {
-      if (scroller) {
-        scroller.scrollTo(0, scroller.scrollHeight);
-      } else {
-        window.scrollTo(0, document.documentElement.scrollHeight);
-      }
-      await sleep(120);
-      return;
-    }
-
-    // Scroll in smaller steps to reduce UI glitches during virtualization.
-    if (scroller) scroller.scrollBy(0, step);
-    else window.scrollBy(0, step);
+    if (scroller) scroller.scrollTo(0, scroller.scrollHeight);
+    else window.scrollTo(0, document.documentElement.scrollHeight);
     await sleep(120);
-
-    if (nearBottom(scroller, 500)) {
-      if (scroller) {
-        scroller.scrollTo(0, scroller.scrollHeight);
-      } else {
-        window.scrollTo(0, document.documentElement.scrollHeight);
-      }
-      await sleep(180);
-    }
   }
 
   // ===== UI (Shadow DOM to avoid CSS collisions) =====
@@ -461,9 +517,17 @@
       .itemText {
         flex: 1 1 auto;
       }
-      .btn.add {
-        flex: 0 0 auto;
-        padding: 4px 8px;
+      .resultToggleWrap {
+        all: initial;
+        display: inline-flex;
+        align-items: center;
+        font: inherit;
+        color: #111;
+      }
+      .resultToggle {
+        width: 14px;
+        height: 14px;
+        cursor: pointer;
       }
       .hint { margin-top: 8px; color: #666; }
     `;
@@ -476,13 +540,9 @@
         <div style="font-weight:700;">Kindle Parent Dashboard Enhancer</div>
       </div>
 
-      <div class="row" style="margin-top:6px;">
-        <button id="clear" class="btn small">Clear DB</button>
-      </div>
-
       <div class="row controls" style="margin-top:8px;">
-        <button id="autoFast" class="btn primary">Auto (Fast)</button>
-        <button id="autoSafe" class="btn">Auto (Safe)</button>
+        <button id="autoFast" class="btn primary">Fast Scan</button>
+        <button id="autoSafe" class="btn">Safe Scan</button>
         <button id="stop" class="btn">Stop</button>
       </div>
 
@@ -491,12 +551,19 @@
       <hr>
 
       <input id="q" class="input" placeholder="Search (substring)">
+      <div id="hitStat" class="hint" style="margin-top:6px;">Hit: 0</div>
 
       <div class="list">
         <div id="list"></div>
       </div>
 
-      <div class="hint">検索結果クリックでカードへ移動。</div>
+      <div class="row space" style="margin-top:8px;">
+        <div id="dbStat" class="hint" style="margin-top:0;">DB: 0</div>
+        <div class="row" style="gap:6px;">
+          <button id="dumpDb" class="btn small">Dump DB</button>
+          <button id="clear" class="btn small">Clear DB</button>
+        </div>
+      </div>
     `;
     shadow.appendChild(panel);
 
@@ -638,7 +705,7 @@
       if (target.knob) knob.className = target.knob;
     }
 
-    async function toggleChildKindleByApi(item, labelEl) {
+    async function toggleChildKindleByApi(item, labelEl, targetStatusOverride) {
       stopFlag = true;
       if (focusedResultEl) focusedResultEl.classList.remove('focused');
       focusedResultEl = labelEl;
@@ -651,55 +718,88 @@
 
       const key = item?.key || item?.title || '';
       const db = loadDB();
-      const dbHit = db.find((x) => (x?.key === key || x?.title === key) && x?.asin);
-      const asin = item?.asin || state.titleToAsin[key] || dbHit?.asin;
+      const asin = item?.asin || resolveAsinByTitle(state, key, item?.title || '', db);
       if (!asin) {
-        setStatus('Toggle: asin unknown (not learned yet)');
-        return;
+        setStatus('Toggle: asin missing (scan first)');
+        return false;
       }
 
       const childId = state.childDirectedId;
-      if (!childId) {
+      const childCandidates = Array.from(new Set([childId, ...(state.childDirectedIdCandidates || [])].filter(Boolean)));
+      if (childCandidates.length === 0) {
         setStatus('Toggle: child id unknown (toggle once on page first)');
-        return;
+        return false;
       }
 
-      let currentStatus = state.asinStatus[asin];
-      if (!currentStatus) {
-        const card = findVisibleCardByKey(key);
-        const current = card ? isCardAlreadyAdded(card) : null;
-        if (current == null) {
-          setStatus('Toggle: current state unknown');
-          return;
+      let targetStatus = targetStatusOverride;
+      if (!targetStatus) {
+        let currentStatus = state.asinStatus[asin];
+        if (!currentStatus) {
+          const card = findVisibleCardByAsinOrKey(asin, key, state);
+          const current = card ? isCardAlreadyAdded(card) : null;
+          if (current == null) currentStatus = 'NOT_ADDED';
+          else currentStatus = current ? 'ADDED' : 'NOT_ADDED';
         }
-        currentStatus = current ? 'ADDED' : 'NOT_ADDED';
+        targetStatus = currentStatus === 'ADDED' ? 'NOT_ADDED' : 'ADDED';
+      }
+      const csrf = state.csrfToken || getCookie('ft-panda-csrf-token') || getCookie('x-amzn-csrf') || '';
+      if (!csrf) {
+        setStatus('Toggle: csrf unknown');
+        return false;
+      }
+      const contentType = state.asinContentType[asin] || 'EBOOK';
+      let ok = false;
+      let lastError = '';
+      let usedChildId = childCandidates[0];
+
+      for (const cid of childCandidates) {
+        const body = {
+          childToAllowlistStatusMap: { [cid]: targetStatus },
+          asins: [asin],
+          asinToContentTypeMap: { [asin]: contentType }
+        };
+
+      let res;
+      try {
+        res = await fetch('/ajax/update-add-content-status-batch', {
+          method: 'POST',
+          credentials: 'include',
+          headers: Object.assign(
+            {
+              'accept': 'application/json, text/plain, */*',
+              'content-type': 'application/json;charset=UTF-8'
+            },
+            csrf ? { 'x-amzn-csrf': csrf } : {}
+          ),
+          body: JSON.stringify(body)
+        });
+      } catch {
+        setStatus('Toggle: request error');
+        return false;
       }
 
-      const targetStatus = currentStatus === 'ADDED' ? 'NOT_ADDED' : 'ADDED';
-      const csrf = getCookie('ft-panda-csrf-token') || getCookie('x-amzn-csrf') || '';
-      const contentType = state.asinContentType[asin] || 'EBOOK';
-      const body = {
-        childToAllowlistStatusMap: { [childId]: targetStatus },
-        asins: [asin],
-        asinToContentTypeMap: { [asin]: contentType }
-      };
+        if (res.ok) {
+          ok = true;
+          usedChildId = cid;
+          break;
+        }
 
-      const res = await fetch('/ajax/update-add-content-status-batch', {
-        method: 'POST',
-        credentials: 'include',
-        headers: Object.assign(
-          { 'content-type': 'application/json;charset=UTF-8' },
-          csrf ? { 'x-amzn-csrf': csrf } : {}
-        ),
-        body: JSON.stringify(body)
-      });
+        try {
+          const text = await res.text();
+          lastError = ` (${res.status})${text ? ` ${text.slice(0, 120)}` : ''}`;
+        } catch {
+          lastError = ` (${res.status})`;
+        }
+      }
 
-      if (!res.ok) {
-        setStatus(`Toggle: request failed (${res.status})`);
-        return;
+      if (!ok) {
+        setStatus(`Toggle: request failed${lastError}`);
+        return false;
       }
 
       state.asinStatus[asin] = targetStatus;
+      state.childDirectedId = usedChildId;
+      ensureChildCandidate(state, usedChildId);
       saveState(state);
       const card = findVisibleCardByAsinOrKey(asin, key, state);
       if (card) {
@@ -708,11 +808,15 @@
           syncSwitchVisual(input, targetStatus === 'ADDED');
         }
       }
-      setStatus(targetStatus === 'ADDED' ? 'Toggle: added' : 'Toggle: removed');
+      setStatus('Done');
+      return true;
     }
 
     function render() {
       const db = loadDB();
+      const state = loadState();
+      state.titleToAsin = state.titleToAsin || {};
+      state.asinStatus = state.asinStatus || {};
       const tokens = searchNorm($('q').value).split(' ').filter(Boolean);
       const hits = tokens.length === 0
         ? db
@@ -721,14 +825,22 @@
           return tokens.every(t => searchable.includes(t));
         });
 
-      setStatus(`DB: ${db.length} / Hit: ${hits.length} / Visible: ${getCards().length}`);
+      $('dbStat').textContent = `DB: ${db.length}`;
+      $('hitStat').textContent = `Hit: ${hits.length}`;
+      $('hitStat').title = `Visible (DOM): ${getCards().length}`;
 
       const list = $('list');
       list.innerHTML = '';
 
       hits
         .slice()
-        .sort((a,b) => (b.seenAt || 0) - (a.seenAt || 0))
+        .sort((a, b) =>
+          (a.title || a.key || '').localeCompare(
+            (b.title || b.key || ''),
+            'ja',
+            { numeric: true, sensitivity: 'base' }
+          )
+        )
         .slice(0, 200)
         .forEach(it => {
           const row = document.createElement('div');
@@ -741,12 +853,37 @@
           jumpBtn.addEventListener('click', () => { jumpToTitle(it.key, jumpBtn); });
           row.appendChild(jumpBtn);
 
-          const addBtn = document.createElement('button');
-          addBtn.className = 'btn add';
-          addBtn.type = 'button';
-          addBtn.textContent = 'Add';
-          addBtn.addEventListener('click', () => { toggleChildKindleByApi(it, jumpBtn); });
-          row.appendChild(addBtn);
+          const asin = it.asin || state.titleToAsin[it.key] || '';
+          const knownStatus = asin ? state.asinStatus[asin] : '';
+          const effectiveStatus = knownStatus || 'NOT_ADDED';
+
+          const toggleWrap = document.createElement('label');
+          toggleWrap.className = 'resultToggleWrap';
+
+          const toggle = document.createElement('input');
+          toggle.className = 'resultToggle';
+          toggle.type = 'checkbox';
+          toggle.checked = effectiveStatus === 'ADDED';
+          toggle.indeterminate = false;
+          toggle.title = effectiveStatus;
+          toggle.addEventListener('change', async () => {
+            const targetStatus = toggle.checked ? 'ADDED' : 'NOT_ADDED';
+            setStatus('Sending...');
+            try {
+              const ok = await toggleChildKindleByApi(it, jumpBtn, targetStatus);
+              if (ok) {
+                toggle.indeterminate = false;
+              } else {
+                toggle.checked = !toggle.checked;
+              }
+            } catch {
+              setStatus('Toggle: internal error');
+              toggle.checked = !toggle.checked;
+            }
+          });
+          toggleWrap.appendChild(toggle);
+
+          row.appendChild(toggleWrap);
 
           list.appendChild(row);
         });
@@ -809,6 +946,23 @@
     $('autoFast').addEventListener('click', () => autoScrollIngest('fast'));
     $('autoSafe').addEventListener('click', () => autoScrollIngest('safe'));
     $('stop').addEventListener('click', () => { stopFlag = true; setStatus('Stopping...'); });
+    $('dumpDb').addEventListener('click', () => {
+      const db = loadDB();
+      const state = loadState();
+      // eslint-disable-next-line no-console
+      console.log('KPDE state', state);
+      // eslint-disable-next-line no-console
+      console.table(
+        db.map((x, i) => ({
+          i,
+          key: x.key || '',
+          title: x.title || '',
+          asin: x.asin || '',
+          seenAt: x.seenAt || 0
+        }))
+      );
+      setStatus(`Dumped DB to console (${db.length})`);
+    });
     $('clear').addEventListener('click', () => {
       localStorage.removeItem(DB_KEY);
       setStatus('DB cleared');
@@ -820,5 +974,6 @@
   }
 
   installApiLearning();
+  enrichDbWithAsin(loadState());
   mountUI();
 })();
