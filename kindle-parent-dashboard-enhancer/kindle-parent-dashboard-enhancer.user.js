@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kindle Parent Dashboard Enhancer
 // @namespace    https://kdmsnr.com
-// @version      1.9.12
+// @version      1.9.13
 // @description  parents.amazon.co.jp add-content: auto collect titles via infinite scroll into a persistent local DB + simple substring search (UI isolated in Shadow DOM).
 // @match        https://parents.amazon.co.jp/settings/add-content?isChildSelected=true
 // @grant        none
@@ -19,6 +19,12 @@
   const STATE_KEY = 'kindle_parent_dashboard_enhancer_state';
   const AUTO_SCROLL_STEP_RATIO = 0.9;
   const AUTO_SCROLL_MIN_STEP_PX = 320;
+  const sessionState = {
+    csrfToken: '',
+    childDirectedId: '',
+    childDirectedIdCandidates: [],
+    asinContentType: {}
+  };
 
   // ===== utils =====
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -106,18 +112,45 @@
     }
   }
 
+  function sanitizeStringMap(input) {
+    if (!input || typeof input !== 'object') return {};
+    const out = {};
+    for (const [k, v] of Object.entries(input)) {
+      if (typeof k !== 'string' || !k) continue;
+      if (typeof v !== 'string' || !v) continue;
+      out[k] = v;
+    }
+    return out;
+  }
+
+  function sanitizeAsinStatusMap(input) {
+    if (!input || typeof input !== 'object') return {};
+    const out = {};
+    for (const [asin, status] of Object.entries(input)) {
+      if (typeof asin !== 'string' || !asin) continue;
+      if (status === 'ADDED' || status === 'NOT_ADDED') out[asin] = status;
+    }
+    return out;
+  }
+
+  function normalizePersistedState(input) {
+    return {
+      titleToAsin: sanitizeStringMap(input?.titleToAsin),
+      asinStatus: sanitizeAsinStatusMap(input?.asinStatus)
+    };
+  }
+
   function loadState() {
     try {
-      const v = JSON.parse(localStorage.getItem(STATE_KEY));
-      if (!v || typeof v !== 'object') return {};
-      return v;
+      const raw = JSON.parse(localStorage.getItem(STATE_KEY));
+      return normalizePersistedState(raw);
     } catch {
-      return {};
+      return normalizePersistedState(null);
     }
   }
 
   function saveState(state) {
-    localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    localStorage.setItem(STATE_KEY, JSON.stringify(normalizePersistedState(state)));
   }
 
   function ensureChildCandidate(state, id) {
@@ -190,9 +223,6 @@
     const state = loadState();
     state.titleToAsin = state.titleToAsin || {};
     state.asinStatus = state.asinStatus || {};
-    state.asinContentType = state.asinContentType || {};
-    state.csrfToken = state.csrfToken || '';
-    state.childDirectedIdCandidates = Array.isArray(state.childDirectedIdCandidates) ? state.childDirectedIdCandidates : [];
     let pendingTitle = '';
     let pendingTitleAt = 0;
 
@@ -260,10 +290,9 @@
 
         const childId = cur.childDirectedId || cur.directedId || cur.selectedChild?.directedId;
         if (isChildDirectedId(childId)) {
-          if (ensureChildCandidate(state, childId)) changed = true;
-          if (!state.childDirectedId) {
-            state.childDirectedId = childId;
-            changed = true;
+          ensureChildCandidate(sessionState, childId);
+          if (!sessionState.childDirectedId) {
+            sessionState.childDirectedId = childId;
           }
         }
 
@@ -281,12 +310,12 @@
       const asinTypeMap = payload?.asinToContentTypeMap || {};
       const childId = Object.keys(childMap)[0] || '';
       if (childId) {
-        if (state.childDirectedId !== childId) state.childDirectedId = childId;
-        ensureChildCandidate(state, childId);
+        if (sessionState.childDirectedId !== childId) sessionState.childDirectedId = childId;
+        ensureChildCandidate(sessionState, childId);
       }
       for (const asin of asins) {
         state.asinStatus[asin] = childMap[childId] || state.asinStatus[asin] || 'ADDED';
-        state.asinContentType[asin] = asinTypeMap[asin] || state.asinContentType[asin] || 'EBOOK';
+        sessionState.asinContentType[asin] = asinTypeMap[asin] || sessionState.asinContentType[asin] || 'EBOOK';
       }
       const isPendingFresh = pendingTitle && (Date.now() - pendingTitleAt) < 5000;
       if (isPendingFresh && asins.length === 1) {
@@ -302,10 +331,7 @@
         const init = args[1] || {};
         const headers = init.headers || {};
         const csrf = headers['x-amzn-csrf'] || headers['X-Amzn-Csrf'] || headers['X-AMZN-CSRF'];
-        if (csrf && state.csrfToken !== csrf) {
-          state.csrfToken = csrf;
-          saveState(state);
-        }
+        if (csrf && sessionState.csrfToken !== csrf) sessionState.csrfToken = csrf;
       } catch {
         // no-op
       }
@@ -336,10 +362,7 @@
     XMLHttpRequest.prototype.setRequestHeader = function(name, value) {
       try {
         if (typeof name === 'string' && name.toLowerCase() === 'x-amzn-csrf' && typeof value === 'string' && value) {
-          if (state.csrfToken !== value) {
-            state.csrfToken = value;
-            saveState(state);
-          }
+          if (sessionState.csrfToken !== value) sessionState.csrfToken = value;
         }
       } catch {
         // no-op
@@ -714,7 +737,6 @@
       const state = loadState();
       state.titleToAsin = state.titleToAsin || {};
       state.asinStatus = state.asinStatus || {};
-      state.asinContentType = state.asinContentType || {};
 
       const key = item?.key || item?.title || '';
       const db = loadDB();
@@ -724,8 +746,8 @@
         return false;
       }
 
-      const childId = state.childDirectedId;
-      const childCandidates = Array.from(new Set([childId, ...(state.childDirectedIdCandidates || [])].filter(Boolean)));
+      const childId = sessionState.childDirectedId;
+      const childCandidates = Array.from(new Set([childId, ...(sessionState.childDirectedIdCandidates || [])].filter(Boolean)));
       if (childCandidates.length === 0) {
         setStatus('Toggle: child id unknown (toggle once on page first)');
         return false;
@@ -742,12 +764,12 @@
         }
         targetStatus = currentStatus === 'ADDED' ? 'NOT_ADDED' : 'ADDED';
       }
-      const csrf = state.csrfToken || getCookie('ft-panda-csrf-token') || getCookie('x-amzn-csrf') || '';
+      const csrf = sessionState.csrfToken || getCookie('ft-panda-csrf-token') || getCookie('x-amzn-csrf') || '';
       if (!csrf) {
         setStatus('Toggle: csrf unknown');
         return false;
       }
-      const contentType = state.asinContentType[asin] || 'EBOOK';
+      const contentType = sessionState.asinContentType[asin] || 'EBOOK';
       let ok = false;
       let lastError = '';
       let usedChildId = childCandidates[0];
@@ -798,8 +820,8 @@
       }
 
       state.asinStatus[asin] = targetStatus;
-      state.childDirectedId = usedChildId;
-      ensureChildCandidate(state, usedChildId);
+      sessionState.childDirectedId = usedChildId;
+      ensureChildCandidate(sessionState, usedChildId);
       saveState(state);
       const card = findVisibleCardByAsinOrKey(asin, key, state);
       if (card) {
@@ -965,7 +987,8 @@
     });
     $('clear').addEventListener('click', () => {
       localStorage.removeItem(DB_KEY);
-      setStatus('DB cleared');
+      localStorage.removeItem(STATE_KEY);
+      setStatus('DB+state cleared');
       render();
     });
     $('q').addEventListener('input', render);
