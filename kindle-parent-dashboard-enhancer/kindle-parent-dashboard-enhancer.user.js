@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Kindle Parent Dashboard Enhancer
 // @namespace    https://kdmsnr.com
-// @version      1.9.26
+// @version      1.9.27
 // @description  parents.amazon.co.jp add-content: auto collect titles via infinite scroll into a persistent local DB + simple substring search (UI isolated in Shadow DOM).
 // @match        https://parents.amazon.co.jp/settings/*
 // @grant        none
@@ -1075,7 +1075,9 @@
     if (window.__kpdeRouteWatcherInstalled) return;
     window.__kpdeRouteWatcherInstalled = true;
     const emit = () => window.dispatchEvent(new Event('kpde-routechange'));
+    const isDocHidden = () => typeof document.hidden === 'boolean' ? document.hidden : false;
     let lastHref = window.location.href;
+    let pollTimer = null;
     const emitIfHrefChanged = () => {
       const now = window.location.href;
       if (now === lastHref) return false;
@@ -1095,10 +1097,22 @@
     wrapHistory('replaceState');
     window.addEventListener('popstate', () => { emitIfHrefChanged(); });
     window.addEventListener('hashchange', () => { emitIfHrefChanged(); });
-    window.setInterval(() => {
+    const schedulePoll = () => {
+      const delay = isDocHidden()
+        ? 5000
+        : (isTargetPage() ? 1200 : 2000);
+      pollTimer = window.setTimeout(runPoll, delay);
+    };
+    const runPoll = () => {
       const changed = emitIfHrefChanged();
-      if (!changed && isTargetPage() && !document.getElementById('kpde-host')) emit();
-    }, 500);
+      if (!changed && !isDocHidden() && isTargetPage() && !document.getElementById('kpde-host')) emit();
+      schedulePoll();
+    };
+    window.addEventListener('visibilitychange', () => {
+      if (pollTimer) window.clearTimeout(pollTimer);
+      schedulePoll();
+    });
+    schedulePoll();
   }
 
   function applyRoute() {
