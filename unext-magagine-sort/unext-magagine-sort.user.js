@@ -25,7 +25,7 @@
   const AUTO_SCROLL_MAX_STEPS = 140;
   const SHOW_AT_BOTTOM_ONLY = false;
   const BOTTOM_THRESHOLD_PX = 160;
-  const INNER_FRAME_HEIGHT_PX = 1000;
+  const INNER_FRAME_HEIGHT_PX = 550;
 
   let isSorting = false;
   let isScheduled = false;
